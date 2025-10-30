@@ -73,6 +73,13 @@ class UTM_Tracker {
 	public $db_installer = null;
 
 	/**
+	 * Page d'administration
+	 *
+	 * @var UTM_Admin_Page|null
+	 */
+	public $admin_page = null;
+
+	/**
 	 * Obtenir l'instance unique du plugin
 	 *
 	 * @since 1.0.0
@@ -106,6 +113,7 @@ class UTM_Tracker {
 		require_once UTM_TRACKER_INCLUDES_DIR . 'class-utm-capture.php';
 		require_once UTM_TRACKER_INCLUDES_DIR . 'class-utm-matcher.php';
 		require_once UTM_TRACKER_INCLUDES_DIR . 'class-tag-applicator.php';
+		require_once UTM_TRACKER_INCLUDES_DIR . 'class-admin-page.php';
 
 		// Fonctions helper
 		require_once UTM_TRACKER_INCLUDES_DIR . 'functions-helpers.php';
@@ -115,6 +123,7 @@ class UTM_Tracker {
 		$this->capture         = new UTM_Capture();
 		$this->matcher         = new UTM_Matcher();
 		$this->tag_applicator  = new UTM_Tag_Applicator();
+		$this->admin_page      = new UTM_Admin_Page();
 	}
 
 	/**
