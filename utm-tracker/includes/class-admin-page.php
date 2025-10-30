@@ -80,6 +80,16 @@ class UTM_Admin_Page {
 			array( $this, 'render_add_campaign_page' )
 		);
 
+		// Sous-menu : UTM Non Matchés
+		add_submenu_page(
+			'utm-tracker',
+			'UTM Non Matchés',
+			'UTM Non Matchés',
+			'manage_options',
+			'utm-tracker-unmatched',
+			array( $this, 'render_unmatched_page' )
+		);
+
 		// Sous-menu : Éditer une Campagne (caché, accessible via paramètre)
 		add_submenu_page(
 			null, // Null = caché du menu
@@ -878,6 +888,29 @@ class UTM_Admin_Page {
 		$user_tags    = $is_edit ? json_decode( $campaign->user_tags, true ) : array();
 		$status       = $is_edit ? $campaign->status : 'active';
 
+		// Si création et paramètres de pré-remplissage dans l'URL (depuis UTM Non Matchés)
+		if ( ! $is_edit ) {
+			if ( isset( $_GET['prefill_source'] ) && ! empty( $_GET['prefill_source'] ) ) {
+				$utm_source = sanitize_text_field( wp_unslash( $_GET['prefill_source'] ) );
+			}
+			if ( isset( $_GET['prefill_medium'] ) && ! empty( $_GET['prefill_medium'] ) ) {
+				$utm_medium = sanitize_text_field( wp_unslash( $_GET['prefill_medium'] ) );
+			}
+			if ( isset( $_GET['prefill_campaign'] ) && ! empty( $_GET['prefill_campaign'] ) ) {
+				$utm_campaign = sanitize_text_field( wp_unslash( $_GET['prefill_campaign'] ) );
+			}
+			if ( isset( $_GET['prefill_content'] ) && ! empty( $_GET['prefill_content'] ) ) {
+				$utm_content = sanitize_text_field( wp_unslash( $_GET['prefill_content'] ) );
+			}
+			if ( isset( $_GET['prefill_term'] ) && ! empty( $_GET['prefill_term'] ) ) {
+				$utm_term = sanitize_text_field( wp_unslash( $_GET['prefill_term'] ) );
+			}
+			// Générer un nom par défaut
+			if ( $utm_source && $utm_medium && $utm_campaign ) {
+				$name = ucfirst( $utm_source ) . ' - ' . ucfirst( $utm_medium ) . ' - ' . ucfirst( str_replace( '_', ' ', $utm_campaign ) );
+			}
+		}
+
 		// Générer l'URL de prévisualisation
 		$preview_url = home_url() . '?utm_source=' . urlencode( $utm_source ) . '&utm_medium=' . urlencode( $utm_medium ) . '&utm_campaign=' . urlencode( $utm_campaign );
 		if ( $utm_content ) {
@@ -1204,6 +1237,139 @@ class UTM_Admin_Page {
 			)
 		);
 		exit;
+	}
+
+	/**
+	 * Page : UTM Non Matchés
+	 *
+	 * @since 1.0.0
+	 */
+	public function render_unmatched_page() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Vous n\'avez pas les permissions nécessaires.', 'utm-tracker' ) );
+		}
+
+		global $wpdb;
+		$table_events = $wpdb->prefix . 'utm_events';
+
+		// Récupérer les combinaisons UTM uniques sans campagne matchée
+		$unmatched_utms = $wpdb->get_results(
+			"SELECT 
+				utm_source, 
+				utm_medium, 
+				utm_campaign,
+				utm_content,
+				utm_term,
+				COUNT(*) as event_count,
+				COUNT(DISTINCT user_id) as user_count,
+				MIN(created_at) as first_seen,
+				MAX(created_at) as last_seen
+			FROM {$table_events}
+			WHERE campaign_id IS NULL
+				AND utm_source IS NOT NULL
+				AND utm_medium IS NOT NULL
+				AND utm_campaign IS NOT NULL
+			GROUP BY utm_source, utm_medium, utm_campaign, utm_content, utm_term
+			ORDER BY event_count DESC, last_seen DESC"
+		);
+
+		?>
+		<div class="wrap utm-tracker-admin">
+			<h1 class="wp-heading-inline">
+				<span class="dashicons dashicons-warning" style="font-size: 32px; margin-right: 10px; color: #f0ad4e;"></span>
+				UTM Non Matchés
+			</h1>
+			<hr class="wp-header-end">
+
+			<div class="utm-alert warning" style="margin-top: 20px;">
+				<p><strong>ℹ️ Ces UTM ont été capturés mais n'ont pas de campagne correspondante.</strong></p>
+				<p>Vous pouvez créer une campagne pour les attribuer automatiquement aux futurs utilisateurs.</p>
+			</div>
+
+			<div class="utm-tracker-card" style="margin-top: 20px;">
+				<?php if ( $unmatched_utms ) : ?>
+					<table class="wp-list-table widefat fixed striped">
+						<thead>
+							<tr>
+								<th>Source</th>
+								<th>Medium</th>
+								<th>Campaign</th>
+								<th>Content</th>
+								<th>Term</th>
+								<th>Événements</th>
+								<th>Utilisateurs</th>
+								<th>Première Visite</th>
+								<th>Dernière Visite</th>
+								<th style="width: 150px;">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $unmatched_utms as $utm ) : ?>
+								<tr>
+									<td><code><?php echo esc_html( $utm->utm_source ); ?></code></td>
+									<td><code><?php echo esc_html( $utm->utm_medium ); ?></code></td>
+									<td><code><?php echo esc_html( $utm->utm_campaign ); ?></code></td>
+									<td><?php echo $utm->utm_content ? '<code>' . esc_html( $utm->utm_content ) . '</code>' : '<em>-</em>'; ?></td>
+									<td><?php echo $utm->utm_term ? '<code>' . esc_html( $utm->utm_term ) . '</code>' : '<em>-</em>'; ?></td>
+									<td><strong><?php echo esc_html( $utm->event_count ); ?></strong></td>
+									<td><strong><?php echo esc_html( $utm->user_count ); ?></strong></td>
+									<td><?php echo esc_html( date_i18n( 'Y-m-d H:i', strtotime( $utm->first_seen ) ) ); ?></td>
+									<td><?php echo esc_html( date_i18n( 'Y-m-d H:i', strtotime( $utm->last_seen ) ) ); ?></td>
+									<td>
+										<a href="<?php echo esc_url( admin_url( 'admin.php?page=utm-tracker-add-campaign&prefill_source=' . urlencode( $utm->utm_source ) . '&prefill_medium=' . urlencode( $utm->utm_medium ) . '&prefill_campaign=' . urlencode( $utm->utm_campaign ) . '&prefill_content=' . urlencode( $utm->utm_content ) . '&prefill_term=' . urlencode( $utm->utm_term ) ) ); ?>" class="button button-primary button-small">
+											<span class="dashicons dashicons-plus-alt" style="vertical-align: middle;"></span>
+											Créer Campagne
+										</a>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+
+					<div style="margin-top: 20px;">
+						<p><strong>Total : <?php echo count( $unmatched_utms ); ?> combinaison(s) UTM non matchée(s)</strong></p>
+					</div>
+				<?php else : ?>
+					<div class="utm-alert success">
+						<p><strong>✅ Parfait ! Tous les UTM sont matchés avec des campagnes.</strong></p>
+						<p>Aucun UTM non matché pour le moment.</p>
+					</div>
+				<?php endif; ?>
+			</div>
+
+			<div class="utm-tracker-card" style="margin-top: 20px;">
+				<h2>📊 Statistiques</h2>
+				<?php
+				$total_events = $wpdb->get_var( "SELECT COUNT(*) FROM {$table_events}" );
+				$matched_events = $wpdb->get_var( "SELECT COUNT(*) FROM {$table_events} WHERE campaign_id IS NOT NULL" );
+				$unmatched_events = $total_events - $matched_events;
+				$match_rate = $total_events > 0 ? round( ( $matched_events / $total_events ) * 100, 1 ) : 0;
+				?>
+				<table class="form-table">
+					<tr>
+						<th>Total d'événements :</th>
+						<td><strong><?php echo esc_html( $total_events ); ?></strong></td>
+					</tr>
+					<tr>
+						<th>Événements matchés :</th>
+						<td><strong style="color: green;"><?php echo esc_html( $matched_events ); ?></strong></td>
+					</tr>
+					<tr>
+						<th>Événements non matchés :</th>
+						<td><strong style="color: orange;"><?php echo esc_html( $unmatched_events ); ?></strong></td>
+					</tr>
+					<tr>
+						<th>Taux de matching :</th>
+						<td>
+							<strong style="color: <?php echo $match_rate >= 80 ? 'green' : ( $match_rate >= 50 ? 'orange' : 'red' ); ?>;">
+								<?php echo esc_html( $match_rate ); ?>%
+							</strong>
+						</td>
+					</tr>
+				</table>
+			</div>
+		</div>
+		<?php
 	}
 }
 

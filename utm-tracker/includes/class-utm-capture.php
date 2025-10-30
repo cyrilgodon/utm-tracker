@@ -120,37 +120,61 @@ class UTM_Capture {
 
 		$table_events = $wpdb->prefix . 'utm_events';
 
-		// Préparer les données
+		// Essayer de matcher une campagne (mais on enregistre même si pas de match)
+		$campaign_id = null;
+		if ( isset( $utm_data['utm_source'], $utm_data['utm_medium'], $utm_data['utm_campaign'] ) ) {
+			$campaign = $this->utm_matcher->match_campaign( array(
+				'utm_source'   => $utm_data['utm_source'],
+				'utm_medium'   => $utm_data['utm_medium'],
+				'utm_campaign' => $utm_data['utm_campaign'],
+			) );
+			if ( $campaign ) {
+				$campaign_id = $campaign->id;
+			}
+		}
+
+		// Préparer les données (TOUS les événements sont enregistrés, même sans campagne)
 		$event_data = array(
 			'user_id'       => get_current_user_id() ?: null,
 			'session_id'    => $utm_data['session_id'] ?? null,
+			'campaign_id'   => $campaign_id,
 			'utm_source'    => $utm_data['utm_source'] ?? null,
 			'utm_medium'    => $utm_data['utm_medium'] ?? null,
 			'utm_campaign'  => $utm_data['utm_campaign'] ?? null,
 			'utm_content'   => $utm_data['utm_content'] ?? null,
 			'utm_term'      => $utm_data['utm_term'] ?? null,
+			'gclid'         => $utm_data['gclid'] ?? null,
+			'fbclid'        => $utm_data['fbclid'] ?? null,
 			'referrer'      => $utm_data['referrer'] ?? null,
 			'landing_page'  => $utm_data['landing_page'] ?? null,
 			'created_at'    => current_time( 'mysql' ),
 		);
 
 		// Insérer dans la base de données
-		$wpdb->insert(
+		$result = $wpdb->insert(
 			$table_events,
 			$event_data,
 			array(
 				'%d', // user_id
 				'%s', // session_id
+				'%d', // campaign_id
 				'%s', // utm_source
 				'%s', // utm_medium
 				'%s', // utm_campaign
 				'%s', // utm_content
 				'%s', // utm_term
+				'%s', // gclid
+				'%s', // fbclid
 				'%s', // referrer
 				'%s', // landing_page
 				'%s', // created_at
 			)
 		);
+
+		// Log si pas de campagne matchée
+		if ( ! $campaign_id && defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			error_log( '[UTM Tracker] ⚠️ Événement UTM enregistré SANS campagne : ' . $utm_data['utm_source'] . '/' . $utm_data['utm_medium'] . '/' . $utm_data['utm_campaign'] );
+		}
 
 		// Log pour debug
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $wpdb->insert_id ) {
