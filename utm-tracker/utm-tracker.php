@@ -208,61 +208,85 @@ class UTM_Tracker {
 	 * @param int $user_id ID du nouvel utilisateur
 	 */
 	public function on_user_register( $user_id ) {
-		// Vérifier que la session existe
-		if ( ! session_id() ) {
-			return;
-		}
-
-		// Récupérer les données UTM de la session
-		$utm_data = $this->utm_capture->get_session_utm_data();
-		
-		if ( empty( $utm_data ) ) {
-			// Aucune donnée UTM en session
-			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-				error_log( '[UTM Tracker] Aucune donnée UTM en session pour l\'utilisateur ' . $user_id );
+		// Envelopper dans un try-catch pour éviter de casser l'inscription
+		try {
+			// Vérifier que les objets sont initialisés
+			if ( ! isset( $this->utm_capture ) || ! isset( $this->utm_matcher ) || ! isset( $this->tag_applicator ) ) {
+				if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+					error_log( '[UTM Tracker] ⚠️ Objets non initialisés lors de user_register' );
+				}
+				return;
 			}
-			return;
-		}
 
-		// Log pour debug
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			error_log( '[UTM Tracker] Traitement inscription utilisateur ' . $user_id . ' avec UTM : ' . wp_json_encode( $utm_data ) );
-		}
-
-		// Sauvegarder les UTM dans les user meta
-		$this->save_utm_to_user_meta( $user_id, $utm_data );
-
-		// Extraire les paramètres UTM
-		$utm_params = array(
-			'utm_source'   => isset( $utm_data['utm_source'] ) ? $utm_data['utm_source'] : '',
-			'utm_medium'   => isset( $utm_data['utm_medium'] ) ? $utm_data['utm_medium'] : '',
-			'utm_campaign' => isset( $utm_data['utm_campaign'] ) ? $utm_data['utm_campaign'] : '',
-		);
-
-		// Matcher la campagne
-		$campaign = $this->utm_matcher->match_campaign( $utm_params );
-
-		if ( ! $campaign ) {
-			// Aucune campagne correspondante
-			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-				error_log( '[UTM Tracker] Aucune campagne matchée pour l\'utilisateur ' . $user_id );
+			// Vérifier que la session existe
+			if ( ! session_id() ) {
+				return;
 			}
-			return;
+
+			// Récupérer les données UTM de la session
+			if ( ! is_callable( array( $this->utm_capture, 'get_session_utm_data' ) ) ) {
+				return;
+			}
+
+			$utm_data = $this->utm_capture->get_session_utm_data();
+			
+			if ( empty( $utm_data ) ) {
+				// Aucune donnée UTM en session - c'est normal, on sort silencieusement
+				return;
+			}
+
+			// Log pour debug
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[UTM Tracker] Traitement inscription utilisateur ' . $user_id . ' avec UTM : ' . wp_json_encode( $utm_data ) );
+			}
+
+			// Sauvegarder les UTM dans les user meta
+			$this->save_utm_to_user_meta( $user_id, $utm_data );
+
+			// Extraire les paramètres UTM
+			$utm_params = array(
+				'utm_source'   => isset( $utm_data['utm_source'] ) ? $utm_data['utm_source'] : '',
+				'utm_medium'   => isset( $utm_data['utm_medium'] ) ? $utm_data['utm_medium'] : '',
+				'utm_campaign' => isset( $utm_data['utm_campaign'] ) ? $utm_data['utm_campaign'] : '',
+			);
+
+			// Vérifier qu'on a les paramètres minimum
+			if ( empty( $utm_params['utm_source'] ) || empty( $utm_params['utm_medium'] ) || empty( $utm_params['utm_campaign'] ) ) {
+				return;
+			}
+
+			// Matcher la campagne
+			$campaign = $this->utm_matcher->match_campaign( $utm_params );
+
+			if ( ! $campaign ) {
+				// Aucune campagne correspondante - c'est normal, on sort silencieusement
+				return;
+			}
+
+			// Appliquer les tags de la campagne
+			$tags_count = $this->tag_applicator->apply_tags_to_user( $user_id, $campaign );
+
+			// Mettre à jour l'événement UTM avec le user_id
+			if ( isset( $utm_data['session_id'] ) ) {
+				$this->update_utm_event_with_user_id( $user_id, $utm_data['session_id'] );
+			}
+
+			// Log succès
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[UTM Tracker] ✅ ' . $tags_count . ' tag(s) appliqué(s) à l\'utilisateur ' . $user_id . ' depuis la campagne "' . $campaign->name . '"' );
+			}
+
+			// Hook personnalisé après attribution
+			do_action( 'utm_tracker_user_registered', $user_id, $campaign, $utm_data );
+
+		} catch ( Exception $e ) {
+			// En cas d'erreur, on log mais on ne fait pas planter l'inscription
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[UTM Tracker] ❌ Erreur lors de user_register : ' . $e->getMessage() );
+				error_log( '[UTM Tracker] Trace : ' . $e->getTraceAsString() );
+			}
+			// On ne fait rien d'autre - l'inscription continue normalement
 		}
-
-		// Appliquer les tags de la campagne
-		$tags_count = $this->tag_applicator->apply_tags_to_user( $user_id, $campaign );
-
-		// Mettre à jour l'événement UTM avec le user_id
-		$this->update_utm_event_with_user_id( $user_id, $utm_data['session_id'] );
-
-		// Log succès
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			error_log( '[UTM Tracker] ✅ ' . $tags_count . ' tag(s) appliqué(s) à l\'utilisateur ' . $user_id . ' depuis la campagne "' . $campaign->name . '"' );
-		}
-
-		// Hook personnalisé après attribution
-		do_action( 'utm_tracker_user_registered', $user_id, $campaign, $utm_data );
 	}
 
 	/**
