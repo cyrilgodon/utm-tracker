@@ -100,6 +100,9 @@ class UTM_Capture {
 		// Enregistrer l'événement dans la base de données
 		$this->log_utm_event( $utm_data );
 
+		// Rediriger vers l'URL propre (sans paramètres UTM)
+		$this->redirect_clean_url();
+
 		// Log pour debug
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 			error_log( '[UTM Tracker] UTM capturés : ' . wp_json_encode( $utm_data ) );
@@ -236,6 +239,74 @@ class UTM_Capture {
 		}
 
 		return isset( $_SESSION['utm_data'] ) ? $_SESSION['utm_data'] : null;
+	}
+
+	/**
+	 * Rediriger vers l'URL sans paramètres UTM (URL propre)
+	 *
+	 * @since 1.0.0
+	 */
+	private function redirect_clean_url() {
+		// Ne pas rediriger si on est en admin ou en AJAX
+		if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
+			return;
+		}
+
+		// Ne pas rediriger si on est déjà en POST (évite de perdre des données)
+		if ( 'POST' === $_SERVER['REQUEST_METHOD'] ) {
+			return;
+		}
+
+		// Construire l'URL propre sans les paramètres UTM
+		$current_url = $this->get_current_url();
+		$parsed_url  = wp_parse_url( $current_url );
+
+		// Si pas de query string, pas besoin de rediriger
+		if ( ! isset( $parsed_url['query'] ) || empty( $parsed_url['query'] ) ) {
+			return;
+		}
+
+		// Parser les paramètres de l'URL
+		parse_str( $parsed_url['query'], $query_params );
+
+		// Retirer tous les paramètres UTM
+		$utm_params_to_remove = array( 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid' );
+		$has_utm = false;
+
+		foreach ( $utm_params_to_remove as $param ) {
+			if ( isset( $query_params[ $param ] ) ) {
+				unset( $query_params[ $param ] );
+				$has_utm = true;
+			}
+		}
+
+		// Si aucun paramètre UTM n'a été trouvé, pas besoin de rediriger
+		if ( ! $has_utm ) {
+			return;
+		}
+
+		// Reconstruire l'URL propre
+		$clean_url = $parsed_url['scheme'] . '://' . $parsed_url['host'];
+
+		if ( isset( $parsed_url['port'] ) ) {
+			$clean_url .= ':' . $parsed_url['port'];
+		}
+
+		$clean_url .= $parsed_url['path'];
+
+		// Rajouter les paramètres restants (non-UTM)
+		if ( ! empty( $query_params ) ) {
+			$clean_url .= '?' . http_build_query( $query_params );
+		}
+
+		// Ajouter le fragment si présent
+		if ( isset( $parsed_url['fragment'] ) ) {
+			$clean_url .= '#' . $parsed_url['fragment'];
+		}
+
+		// Redirection 302 (temporaire) pour éviter de casser le SEO
+		wp_safe_redirect( $clean_url, 302 );
+		exit;
 	}
 }
 

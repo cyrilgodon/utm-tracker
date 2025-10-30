@@ -11,11 +11,12 @@
 ### ✨ Fonctionnalités Principales
 
 - ✅ **Capture UTM sans cookies** : Utilise la session PHP pour un tracking simple et conforme RGPD
+- ✅ **URL propre automatique** : Les paramètres UTM sont masqués de l'URL après capture (redirection 302)
 - ✅ **Matching automatique** : Associe les UTM à des campagnes prédéfinies
 - ✅ **Tags utilisateur** : Attribution automatique de tags lors de l'inscription
 - ✅ **Historique complet** : Enregistre tous les événements UTM en base de données
+- ✅ **Interface admin complète** : CRUD complet pour gérer les campagnes
 - ✅ **API simple** : Fonctions helper pour interroger et gérer les campagnes/tags
-- ✅ **Pas d'interface admin** (MVP) : Configuration directe en base de données
 
 ---
 
@@ -107,7 +108,18 @@ Visitez votre site avec des paramètres UTM :
 https://votresite.com/?utm_source=google&utm_medium=cpc&utm_campaign=coaching_q1_2025
 ```
 
-Les UTM sont capturés en session PHP et enregistrés dans `wp_utm_events`.
+**Ce qui se passe automatiquement :**
+
+1. ✅ Les UTM sont capturés et stockés en session PHP
+2. ✅ Un événement est enregistré dans `wp_utm_events`
+3. ✅ **Redirection automatique vers l'URL propre** : `https://votresite.com/`
+4. ✅ Les UTM restent disponibles en session pour le matching
+
+**Avantages :**
+- 🎨 **URL propre** : Plus de paramètres disgracieux dans l'URL
+- 🔒 **Sécurité** : Les UTM ne sont pas visibles dans l'historique de navigation
+- 📊 **Analytics** : Le tracking continue via la session PHP
+- ✨ **UX améliorée** : L'utilisateur voit une URL propre
 
 ### 3. Inscription Utilisateur
 
