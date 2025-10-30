@@ -30,6 +30,8 @@ class UTM_Admin_Page {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_styles' ) );
 		add_action( 'admin_post_utm_tracker_test_campaign', array( $this, 'handle_test_campaign' ) );
 		add_action( 'admin_post_utm_tracker_clear_test_data', array( $this, 'handle_clear_test_data' ) );
+		add_action( 'admin_post_utm_tracker_save_campaign', array( $this, 'handle_save_campaign' ) );
+		add_action( 'admin_post_utm_tracker_delete_campaign', array( $this, 'handle_delete_campaign' ) );
 	}
 
 	/**
@@ -46,6 +48,46 @@ class UTM_Admin_Page {
 			array( $this, 'render_admin_page' ),
 			'dashicons-chart-line',
 			30
+		);
+
+		// Sous-menu : Dashboard (renomme le premier élément)
+		add_submenu_page(
+			'utm-tracker',
+			'Dashboard',
+			'Dashboard',
+			'manage_options',
+			'utm-tracker',
+			array( $this, 'render_admin_page' )
+		);
+
+		// Sous-menu : Toutes les Campagnes
+		add_submenu_page(
+			'utm-tracker',
+			'Campagnes',
+			'Campagnes',
+			'manage_options',
+			'utm-tracker-campaigns',
+			array( $this, 'render_campaigns_page' )
+		);
+
+		// Sous-menu : Ajouter une Campagne
+		add_submenu_page(
+			'utm-tracker',
+			'Ajouter une Campagne',
+			'Ajouter une Campagne',
+			'manage_options',
+			'utm-tracker-add-campaign',
+			array( $this, 'render_add_campaign_page' )
+		);
+
+		// Sous-menu : Éditer une Campagne (caché, accessible via paramètre)
+		add_submenu_page(
+			null, // Null = caché du menu
+			'Éditer une Campagne',
+			'Éditer une Campagne',
+			'manage_options',
+			'utm-tracker-edit-campaign',
+			array( $this, 'render_edit_campaign_page' )
 		);
 	}
 
@@ -659,6 +701,506 @@ class UTM_Admin_Page {
 				'clear_success',
 				'1',
 				admin_url( 'admin.php?page=utm-tracker' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Page : Liste des Campagnes
+	 *
+	 * @since 1.0.0
+	 */
+	public function render_campaigns_page() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Vous n\'avez pas les permissions nécessaires.', 'utm-tracker' ) );
+		}
+
+		global $wpdb;
+		$matcher = utm_tracker()->matcher;
+
+		// Messages
+		if ( isset( $_GET['deleted'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p><strong>✅ Campagne supprimée avec succès.</strong></p></div>';
+		}
+		if ( isset( $_GET['saved'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p><strong>✅ Campagne enregistrée avec succès.</strong></p></div>';
+		}
+
+		// Récupérer toutes les campagnes
+		$campaigns = $matcher->get_all_campaigns();
+
+		?>
+		<div class="wrap utm-tracker-admin">
+			<h1 class="wp-heading-inline">
+				<span class="dashicons dashicons-megaphone" style="font-size: 32px; margin-right: 10px;"></span>
+				Toutes les Campagnes
+			</h1>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=utm-tracker-add-campaign' ) ); ?>" class="page-title-action">
+				<span class="dashicons dashicons-plus-alt" style="vertical-align: middle;"></span>
+				Ajouter une Campagne
+			</a>
+			<hr class="wp-header-end">
+
+			<div class="utm-tracker-card" style="margin-top: 20px;">
+				<?php if ( $campaigns ) : ?>
+					<table class="wp-list-table widefat fixed striped">
+						<thead>
+							<tr>
+								<th style="width: 50px;">ID</th>
+								<th>Nom</th>
+								<th>Source</th>
+								<th>Medium</th>
+								<th>Campagne</th>
+								<th>Tags</th>
+								<th>Statut</th>
+								<th>Stats</th>
+								<th style="width: 150px;">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $campaigns as $campaign ) : ?>
+								<?php
+								$tags  = json_decode( $campaign->user_tags, true );
+								$stats = utm_get_campaign_stats( $campaign->id );
+								?>
+								<tr>
+									<td><strong><?php echo esc_html( $campaign->id ); ?></strong></td>
+									<td><strong><?php echo esc_html( $campaign->name ); ?></strong></td>
+									<td><code><?php echo esc_html( $campaign->utm_source ); ?></code></td>
+									<td><code><?php echo esc_html( $campaign->utm_medium ); ?></code></td>
+									<td><code><?php echo esc_html( $campaign->utm_campaign ); ?></code></td>
+									<td>
+										<?php
+										if ( $tags ) {
+											foreach ( $tags as $tag ) {
+												echo '<span class="utm-badge" style="background: #ddd; color: #333; margin: 2px;">' . esc_html( $tag ) . '</span> ';
+											}
+										} else {
+											echo '<em>Aucun tag</em>';
+										}
+										?>
+									</td>
+									<td>
+										<span class="utm-badge <?php echo esc_attr( $campaign->status ); ?>">
+											<?php echo esc_html( $campaign->status ); ?>
+										</span>
+									</td>
+									<td>
+										<strong><?php echo esc_html( $stats['visits'] ); ?></strong> visites<br>
+										<strong><?php echo esc_html( $stats['conversions'] ); ?></strong> conversions
+									</td>
+									<td>
+										<a href="<?php echo esc_url( admin_url( 'admin.php?page=utm-tracker-edit-campaign&id=' . $campaign->id ) ); ?>" class="button button-small">
+											<span class="dashicons dashicons-edit" style="vertical-align: middle;"></span>
+											Éditer
+										</a>
+										<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display: inline;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cette campagne ?');">
+											<?php wp_nonce_field( 'utm_tracker_delete_campaign', 'utm_tracker_nonce' ); ?>
+											<input type="hidden" name="action" value="utm_tracker_delete_campaign">
+											<input type="hidden" name="campaign_id" value="<?php echo esc_attr( $campaign->id ); ?>">
+											<button type="submit" class="button button-small button-link-delete" style="color: #b32d2e;">
+												<span class="dashicons dashicons-trash" style="vertical-align: middle;"></span>
+												Supprimer
+											</button>
+										</form>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				<?php else : ?>
+					<div class="utm-alert info">
+						<p><strong>Aucune campagne pour le moment.</strong></p>
+						<p>
+							<a href="<?php echo esc_url( admin_url( 'admin.php?page=utm-tracker-add-campaign' ) ); ?>" class="button button-primary">
+								<span class="dashicons dashicons-plus-alt" style="vertical-align: middle;"></span>
+								Créer votre première campagne
+							</a>
+						</p>
+					</div>
+				<?php endif; ?>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Page : Ajouter une Campagne
+	 *
+	 * @since 1.0.0
+	 */
+	public function render_add_campaign_page() {
+		$this->render_campaign_form();
+	}
+
+	/**
+	 * Page : Éditer une Campagne
+	 *
+	 * @since 1.0.0
+	 */
+	public function render_edit_campaign_page() {
+		if ( ! isset( $_GET['id'] ) ) {
+			wp_die( 'ID de campagne manquant' );
+		}
+
+		$campaign_id = intval( $_GET['id'] );
+		$campaign    = utm_get_campaign( $campaign_id );
+
+		if ( ! $campaign ) {
+			wp_die( 'Campagne introuvable' );
+		}
+
+		$this->render_campaign_form( $campaign );
+	}
+
+	/**
+	 * Formulaire de Campagne (Création/Édition)
+	 *
+	 * @since 1.0.0
+	 * @param object|null $campaign Campagne à éditer (null pour création).
+	 */
+	private function render_campaign_form( $campaign = null ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Vous n\'avez pas les permissions nécessaires.', 'utm-tracker' ) );
+		}
+
+		$is_edit = ! empty( $campaign );
+		$title   = $is_edit ? 'Éditer la Campagne' : 'Ajouter une Campagne';
+
+		// Valeurs par défaut
+		$name         = $is_edit ? $campaign->name : '';
+		$utm_source   = $is_edit ? $campaign->utm_source : '';
+		$utm_medium   = $is_edit ? $campaign->utm_medium : '';
+		$utm_campaign = $is_edit ? $campaign->utm_campaign : '';
+		$utm_content  = $is_edit ? $campaign->utm_content : '';
+		$utm_term     = $is_edit ? $campaign->utm_term : '';
+		$user_tags    = $is_edit ? json_decode( $campaign->user_tags, true ) : array();
+		$status       = $is_edit ? $campaign->status : 'active';
+
+		// Générer l'URL de prévisualisation
+		$preview_url = home_url() . '?utm_source=' . urlencode( $utm_source ) . '&utm_medium=' . urlencode( $utm_medium ) . '&utm_campaign=' . urlencode( $utm_campaign );
+		if ( $utm_content ) {
+			$preview_url .= '&utm_content=' . urlencode( $utm_content );
+		}
+		if ( $utm_term ) {
+			$preview_url .= '&utm_term=' . urlencode( $utm_term );
+		}
+
+		?>
+		<div class="wrap utm-tracker-admin">
+			<h1>
+				<span class="dashicons dashicons-<?php echo $is_edit ? 'edit' : 'plus-alt'; ?>" style="font-size: 32px; margin-right: 10px;"></span>
+				<?php echo esc_html( $title ); ?>
+			</h1>
+
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" id="utm-campaign-form">
+				<?php wp_nonce_field( 'utm_tracker_save_campaign', 'utm_tracker_nonce' ); ?>
+				<input type="hidden" name="action" value="utm_tracker_save_campaign">
+				<?php if ( $is_edit ) : ?>
+					<input type="hidden" name="campaign_id" value="<?php echo esc_attr( $campaign->id ); ?>">
+				<?php endif; ?>
+
+				<div class="utm-tracker-card">
+					<h2>📝 Informations de la Campagne</h2>
+
+					<table class="form-table" role="presentation">
+						<tbody>
+							<tr>
+								<th scope="row">
+									<label for="campaign_name">Nom de la Campagne <span style="color: red;">*</span></label>
+								</th>
+								<td>
+									<input type="text" id="campaign_name" name="campaign_name" value="<?php echo esc_attr( $name ); ?>" class="regular-text" required>
+									<p class="description">Nom descriptif pour identifier facilement cette campagne (ex: "Google Ads Q1 2025")</p>
+								</td>
+							</tr>
+
+							<tr>
+								<th scope="row">
+									<label for="utm_source">UTM Source <span style="color: red;">*</span></label>
+								</th>
+								<td>
+									<input type="text" id="utm_source" name="utm_source" value="<?php echo esc_attr( $utm_source ); ?>" class="regular-text" required oninput="updatePreview()">
+									<p class="description">Exemple : google, facebook, newsletter</p>
+								</td>
+							</tr>
+
+							<tr>
+								<th scope="row">
+									<label for="utm_medium">UTM Medium <span style="color: red;">*</span></label>
+								</th>
+								<td>
+									<input type="text" id="utm_medium" name="utm_medium" value="<?php echo esc_attr( $utm_medium ); ?>" class="regular-text" required oninput="updatePreview()">
+									<p class="description">Exemple : cpc, organic, email</p>
+								</td>
+							</tr>
+
+							<tr>
+								<th scope="row">
+									<label for="utm_campaign">UTM Campaign <span style="color: red;">*</span></label>
+								</th>
+								<td>
+									<input type="text" id="utm_campaign" name="utm_campaign" value="<?php echo esc_attr( $utm_campaign ); ?>" class="regular-text" required oninput="updatePreview()">
+									<p class="description">Exemple : spring_sale, coaching_q1</p>
+								</td>
+							</tr>
+
+							<tr>
+								<th scope="row">
+									<label for="utm_content">UTM Content</label>
+								</th>
+								<td>
+									<input type="text" id="utm_content" name="utm_content" value="<?php echo esc_attr( $utm_content ); ?>" class="regular-text" oninput="updatePreview()">
+									<p class="description">Optionnel : variante de l'annonce (ex: banner_a)</p>
+								</td>
+							</tr>
+
+							<tr>
+								<th scope="row">
+									<label for="utm_term">UTM Term</label>
+								</th>
+								<td>
+									<input type="text" id="utm_term" name="utm_term" value="<?php echo esc_attr( $utm_term ); ?>" class="regular-text" oninput="updatePreview()">
+									<p class="description">Optionnel : mots-clés (ex: coach professionnel)</p>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<div class="utm-tracker-card">
+					<h2>🏷️ Tags à Appliquer Automatiquement</h2>
+
+					<p>Ces tags seront appliqués automatiquement aux utilisateurs qui s'inscrivent via cette campagne.</p>
+
+					<div id="tags-container" style="margin: 15px 0;">
+						<?php if ( $user_tags ) : ?>
+							<?php foreach ( $user_tags as $index => $tag ) : ?>
+								<div class="tag-input-row" style="margin-bottom: 10px;">
+									<input type="text" name="user_tags[]" value="<?php echo esc_attr( $tag ); ?>" class="regular-text" placeholder="tag_slug" required>
+									<button type="button" class="button" onclick="removeTag(this)">
+										<span class="dashicons dashicons-trash" style="vertical-align: middle;"></span>
+										Retirer
+									</button>
+								</div>
+							<?php endforeach; ?>
+						<?php else : ?>
+							<div class="tag-input-row" style="margin-bottom: 10px;">
+								<input type="text" name="user_tags[]" class="regular-text" placeholder="tag_slug" required>
+								<button type="button" class="button" onclick="removeTag(this)">
+									<span class="dashicons dashicons-trash" style="vertical-align: middle;"></span>
+									Retirer
+								</button>
+							</div>
+						<?php endif; ?>
+					</div>
+
+					<button type="button" class="button" onclick="addTag()">
+						<span class="dashicons dashicons-plus-alt" style="vertical-align: middle;"></span>
+						Ajouter un Tag
+					</button>
+
+					<p class="description" style="margin-top: 10px;">
+						<strong>Format :</strong> Utilisez des slugs en minuscules avec underscores (ex: lead_google, coaching, premium)
+					</p>
+				</div>
+
+				<div class="utm-tracker-card">
+					<h2>⚙️ Configuration</h2>
+
+					<table class="form-table" role="presentation">
+						<tbody>
+							<tr>
+								<th scope="row">
+									<label for="campaign_status">Statut</label>
+								</th>
+								<td>
+									<select id="campaign_status" name="campaign_status" class="regular-text">
+										<option value="active" <?php selected( $status, 'active' ); ?>>Active</option>
+										<option value="paused" <?php selected( $status, 'paused' ); ?>>En Pause</option>
+										<option value="archived" <?php selected( $status, 'archived' ); ?>>Archivée</option>
+									</select>
+									<p class="description">Seules les campagnes actives effectuent le matching</p>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<div class="utm-tracker-card">
+					<h2>🔗 URL de Prévisualisation</h2>
+
+					<div class="utm-test-url" id="preview-url">
+						<?php echo esc_html( $preview_url ); ?>
+					</div>
+
+					<button type="button" class="button" onclick="copyPreviewUrl()">
+						<span class="dashicons dashicons-clipboard" style="vertical-align: middle;"></span>
+						Copier l'URL
+					</button>
+				</div>
+
+				<p class="submit">
+					<button type="submit" class="button button-primary button-large">
+						<span class="dashicons dashicons-yes" style="vertical-align: middle;"></span>
+						<?php echo $is_edit ? 'Mettre à Jour la Campagne' : 'Créer la Campagne'; ?>
+					</button>
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=utm-tracker-campaigns' ) ); ?>" class="button button-large">
+						Annuler
+					</a>
+				</p>
+			</form>
+		</div>
+
+		<script>
+		function addTag() {
+			const container = document.getElementById('tags-container');
+			const div = document.createElement('div');
+			div.className = 'tag-input-row';
+			div.style.marginBottom = '10px';
+			div.innerHTML = `
+				<input type="text" name="user_tags[]" class="regular-text" placeholder="tag_slug" required>
+				<button type="button" class="button" onclick="removeTag(this)">
+					<span class="dashicons dashicons-trash" style="vertical-align: middle;"></span>
+					Retirer
+				</button>
+			`;
+			container.appendChild(div);
+		}
+
+		function removeTag(button) {
+			const container = document.getElementById('tags-container');
+			if (container.children.length > 1) {
+				button.parentElement.remove();
+			} else {
+				alert('Au moins un tag est requis');
+			}
+		}
+
+		function updatePreview() {
+			const source = document.getElementById('utm_source').value;
+			const medium = document.getElementById('utm_medium').value;
+			const campaign = document.getElementById('utm_campaign').value;
+			const content = document.getElementById('utm_content').value;
+			const term = document.getElementById('utm_term').value;
+
+			let url = '<?php echo home_url(); ?>?utm_source=' + encodeURIComponent(source) +
+					  '&utm_medium=' + encodeURIComponent(medium) +
+					  '&utm_campaign=' + encodeURIComponent(campaign);
+
+			if (content) url += '&utm_content=' + encodeURIComponent(content);
+			if (term) url += '&utm_term=' + encodeURIComponent(term);
+
+			document.getElementById('preview-url').textContent = url;
+		}
+
+		function copyPreviewUrl() {
+			const url = document.getElementById('preview-url').textContent;
+			navigator.clipboard.writeText(url).then(() => {
+				alert('URL copiée dans le presse-papier !');
+			});
+		}
+		</script>
+		<?php
+	}
+
+	/**
+	 * Gérer la sauvegarde d'une campagne
+	 *
+	 * @since 1.0.0
+	 */
+	public function handle_save_campaign() {
+		// Vérifier les permissions
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Permissions insuffisantes' );
+		}
+
+		// Vérifier le nonce
+		check_admin_referer( 'utm_tracker_save_campaign', 'utm_tracker_nonce' );
+
+		// Récupérer les données
+		$campaign_id  = isset( $_POST['campaign_id'] ) ? intval( $_POST['campaign_id'] ) : 0;
+		$name         = sanitize_text_field( $_POST['campaign_name'] );
+		$utm_source   = sanitize_text_field( $_POST['utm_source'] );
+		$utm_medium   = sanitize_text_field( $_POST['utm_medium'] );
+		$utm_campaign = sanitize_text_field( $_POST['utm_campaign'] );
+		$utm_content  = sanitize_text_field( $_POST['utm_content'] );
+		$utm_term     = sanitize_text_field( $_POST['utm_term'] );
+		$user_tags    = isset( $_POST['user_tags'] ) ? array_map( 'sanitize_text_field', $_POST['user_tags'] ) : array();
+		$status       = sanitize_text_field( $_POST['campaign_status'] );
+
+		// Filtrer les tags vides
+		$user_tags = array_filter( $user_tags );
+
+		if ( empty( $user_tags ) ) {
+			wp_die( 'Au moins un tag est requis' );
+		}
+
+		// Données de la campagne
+		$campaign_data = array(
+			'name'         => $name,
+			'utm_source'   => strtolower( $utm_source ),
+			'utm_medium'   => strtolower( $utm_medium ),
+			'utm_campaign' => strtolower( $utm_campaign ),
+			'utm_content'  => $utm_content,
+			'utm_term'     => $utm_term,
+			'user_tags'    => $user_tags,
+			'status'       => $status,
+		);
+
+		// Créer ou mettre à jour
+		if ( $campaign_id > 0 ) {
+			// Mise à jour
+			$result = utm_update_campaign( $campaign_id, $campaign_data );
+		} else {
+			// Création
+			$result = utm_add_campaign( $campaign_data );
+		}
+
+		// Redirection
+		if ( $result ) {
+			wp_safe_redirect(
+				add_query_arg(
+					'saved',
+					'1',
+					admin_url( 'admin.php?page=utm-tracker-campaigns' )
+				)
+			);
+		} else {
+			wp_die( 'Erreur lors de la sauvegarde de la campagne' );
+		}
+
+		exit;
+	}
+
+	/**
+	 * Gérer la suppression d'une campagne
+	 *
+	 * @since 1.0.0
+	 */
+	public function handle_delete_campaign() {
+		// Vérifier les permissions
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Permissions insuffisantes' );
+		}
+
+		// Vérifier le nonce
+		check_admin_referer( 'utm_tracker_delete_campaign', 'utm_tracker_nonce' );
+
+		// Récupérer l'ID
+		$campaign_id = isset( $_POST['campaign_id'] ) ? intval( $_POST['campaign_id'] ) : 0;
+
+		if ( $campaign_id > 0 ) {
+			utm_delete_campaign( $campaign_id );
+		}
+
+		// Redirection
+		wp_safe_redirect(
+			add_query_arg(
+				'deleted',
+				'1',
+				admin_url( 'admin.php?page=utm-tracker-campaigns' )
 			)
 		);
 		exit;
