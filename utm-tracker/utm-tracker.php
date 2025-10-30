@@ -140,6 +140,9 @@ class UTM_Tracker {
 		add_action( 'plugins_loaded', array( $this, 'start_session' ), 1 );
 		add_action( 'wp_logout', array( $this, 'destroy_session' ) );
 		add_action( 'wp_login', array( $this, 'destroy_session' ) );
+		
+		// Hook pour l'inscription utilisateur
+		add_action( 'user_register', array( $this, 'on_user_register' ), 10, 1 );
 	}
 
 	/**
@@ -194,6 +197,134 @@ class UTM_Tracker {
 	public function destroy_session() {
 		if ( session_id() ) {
 			session_destroy();
+		}
+	}
+
+	/**
+	 * Hook appelé lors de l'inscription d'un nouvel utilisateur
+	 * Applique les tags basés sur les UTM capturés en session
+	 *
+	 * @since 1.0.0
+	 * @param int $user_id ID du nouvel utilisateur
+	 */
+	public function on_user_register( $user_id ) {
+		// Vérifier que la session existe
+		if ( ! session_id() ) {
+			return;
+		}
+
+		// Récupérer les données UTM de la session
+		$utm_data = $this->utm_capture->get_session_utm_data();
+		
+		if ( empty( $utm_data ) ) {
+			// Aucune donnée UTM en session
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[UTM Tracker] Aucune donnée UTM en session pour l\'utilisateur ' . $user_id );
+			}
+			return;
+		}
+
+		// Log pour debug
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			error_log( '[UTM Tracker] Traitement inscription utilisateur ' . $user_id . ' avec UTM : ' . wp_json_encode( $utm_data ) );
+		}
+
+		// Sauvegarder les UTM dans les user meta
+		$this->save_utm_to_user_meta( $user_id, $utm_data );
+
+		// Extraire les paramètres UTM
+		$utm_params = array(
+			'utm_source'   => isset( $utm_data['utm_source'] ) ? $utm_data['utm_source'] : '',
+			'utm_medium'   => isset( $utm_data['utm_medium'] ) ? $utm_data['utm_medium'] : '',
+			'utm_campaign' => isset( $utm_data['utm_campaign'] ) ? $utm_data['utm_campaign'] : '',
+		);
+
+		// Matcher la campagne
+		$campaign = $this->utm_matcher->match_campaign( $utm_params );
+
+		if ( ! $campaign ) {
+			// Aucune campagne correspondante
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[UTM Tracker] Aucune campagne matchée pour l\'utilisateur ' . $user_id );
+			}
+			return;
+		}
+
+		// Appliquer les tags de la campagne
+		$tags_count = $this->tag_applicator->apply_tags_to_user( $user_id, $campaign );
+
+		// Mettre à jour l'événement UTM avec le user_id
+		$this->update_utm_event_with_user_id( $user_id, $utm_data['session_id'] );
+
+		// Log succès
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			error_log( '[UTM Tracker] ✅ ' . $tags_count . ' tag(s) appliqué(s) à l\'utilisateur ' . $user_id . ' depuis la campagne "' . $campaign->name . '"' );
+		}
+
+		// Hook personnalisé après attribution
+		do_action( 'utm_tracker_user_registered', $user_id, $campaign, $utm_data );
+	}
+
+	/**
+	 * Sauvegarder les UTM dans les user meta
+	 *
+	 * @since 1.0.0
+	 * @param int   $user_id  ID de l'utilisateur
+	 * @param array $utm_data Données UTM
+	 */
+	private function save_utm_to_user_meta( $user_id, $utm_data ) {
+		// Sauvegarder chaque paramètre UTM
+		$utm_params = array( 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid' );
+		
+		foreach ( $utm_params as $param ) {
+			if ( isset( $utm_data[ $param ] ) && ! empty( $utm_data[ $param ] ) ) {
+				update_user_meta( $user_id, $param, sanitize_text_field( $utm_data[ $param ] ) );
+			}
+		}
+
+		// Sauvegarder les métadonnées supplémentaires
+		if ( isset( $utm_data['referrer'] ) && ! empty( $utm_data['referrer'] ) ) {
+			update_user_meta( $user_id, 'utm_referrer', esc_url_raw( $utm_data['referrer'] ) );
+		}
+
+		if ( isset( $utm_data['landing_page'] ) && ! empty( $utm_data['landing_page'] ) ) {
+			update_user_meta( $user_id, 'utm_landing_page', esc_url_raw( $utm_data['landing_page'] ) );
+		}
+
+		if ( isset( $utm_data['timestamp'] ) ) {
+			update_user_meta( $user_id, 'utm_first_visit', $utm_data['timestamp'] );
+		}
+	}
+
+	/**
+	 * Mettre à jour les événements UTM avec le user_id après inscription
+	 *
+	 * @since 1.0.0
+	 * @param int    $user_id    ID de l'utilisateur
+	 * @param string $session_id ID de session
+	 */
+	private function update_utm_event_with_user_id( $user_id, $session_id ) {
+		if ( empty( $session_id ) ) {
+			return;
+		}
+
+		global $wpdb;
+		$table_utm_events = $wpdb->prefix . 'utm_events';
+
+		// Mettre à jour tous les événements de cette session avec le user_id
+		$updated = $wpdb->update(
+			$table_utm_events,
+			array( 'user_id' => $user_id ),
+			array( 
+				'session_id' => $session_id,
+				'user_id'    => null, // Seulement les événements sans user_id
+			),
+			array( '%d' ),
+			array( '%s', '%d' )
+		);
+
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $updated ) {
+			error_log( '[UTM Tracker] ' . $updated . ' événement(s) UTM mis à jour avec user_id ' . $user_id );
 		}
 	}
 
