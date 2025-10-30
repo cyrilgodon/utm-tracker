@@ -519,10 +519,10 @@ class UTM_Admin_Page {
 					<table class="utm-table">
 						<thead>
 							<tr>
-								<th>Date</th>
+								<th style="width: 150px;">Date</th>
 								<th>UTM</th>
-								<th>User ID</th>
-								<th>Session</th>
+								<th style="width: 80px;">User ID</th>
+								<th style="width: 200px;">Session</th>
 								<th>Landing Page</th>
 							</tr>
 						</thead>
@@ -536,7 +536,7 @@ class UTM_Admin_Page {
 										<?php echo esc_html( $event->utm_campaign ); ?>
 									</td>
 									<td><?php echo $event->user_id ? esc_html( $event->user_id ) : '<em>Anonyme</em>'; ?></td>
-									<td><code><?php echo esc_html( substr( $event->session_id, 0, 8 ) ); ?>...</code></td>
+									<td><code style="font-size: 11px;"><?php echo esc_html( $event->session_id ); ?></code></td>
 									<td><small><?php echo esc_html( $event->landing_page ); ?></small></td>
 								</tr>
 							<?php endforeach; ?>
