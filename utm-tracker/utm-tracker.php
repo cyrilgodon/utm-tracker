@@ -210,8 +210,8 @@ class UTM_Tracker {
 	public function on_user_register( $user_id ) {
 		// Envelopper dans un try-catch pour éviter de casser l'inscription
 		try {
-			// Vérifier que les objets sont initialisés
-			if ( ! isset( $this->utm_capture ) || ! isset( $this->utm_matcher ) || ! isset( $this->tag_applicator ) ) {
+			// Vérifier que les objets sont initialisés (noms corrects des propriétés)
+			if ( ! isset( $this->capture ) || ! isset( $this->matcher ) || ! isset( $this->tag_applicator ) ) {
 				if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 					error_log( '[UTM Tracker] ⚠️ Objets non initialisés lors de user_register' );
 				}
@@ -224,11 +224,11 @@ class UTM_Tracker {
 			}
 
 			// Récupérer les données UTM de la session
-			if ( ! is_callable( array( $this->utm_capture, 'get_session_utm_data' ) ) ) {
+			if ( ! is_callable( array( $this->capture, 'get_session_utm_data' ) ) ) {
 				return;
 			}
 
-			$utm_data = $this->utm_capture->get_session_utm_data();
+			$utm_data = $this->capture->get_session_utm_data();
 			
 			if ( empty( $utm_data ) ) {
 				// Aucune donnée UTM en session - c'est normal, on sort silencieusement
@@ -256,7 +256,7 @@ class UTM_Tracker {
 			}
 
 			// Matcher la campagne
-			$campaign = $this->utm_matcher->match_campaign( $utm_params );
+			$campaign = $this->matcher->match_campaign( $utm_params );
 
 			if ( ! $campaign ) {
 				// Aucune campagne correspondante - c'est normal, on sort silencieusement
