@@ -123,13 +123,17 @@ class UTM_Capture {
 		// Essayer de matcher une campagne (mais on enregistre même si pas de match)
 		$campaign_id = null;
 		if ( isset( $utm_data['utm_source'], $utm_data['utm_medium'], $utm_data['utm_campaign'] ) ) {
-			$campaign = $this->utm_matcher->match_campaign( array(
-				'utm_source'   => $utm_data['utm_source'],
-				'utm_medium'   => $utm_data['utm_medium'],
-				'utm_campaign' => $utm_data['utm_campaign'],
-			) );
-			if ( $campaign ) {
-				$campaign_id = $campaign->id;
+			// Utiliser le matcher via l'instance globale du plugin
+			$plugin = utm_tracker();
+			if ( $plugin && isset( $plugin->matcher ) ) {
+				$campaign = $plugin->matcher->match_campaign( array(
+					'utm_source'   => $utm_data['utm_source'],
+					'utm_medium'   => $utm_data['utm_medium'],
+					'utm_campaign' => $utm_data['utm_campaign'],
+				) );
+				if ( $campaign ) {
+					$campaign_id = $campaign->id;
+				}
 			}
 		}
 
