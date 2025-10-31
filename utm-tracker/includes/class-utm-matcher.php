@@ -21,6 +21,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 class UTM_Matcher {
 
 	/**
+	 * Alias de compatibilité pour match_campaign (retourne l'objet campagne)
+	 *
+	 * @since 1.0.0
+	 * @param array $utm_data
+	 * @return object|null
+	 */
+	public function match_campaign( $utm_data ) {
+		return $this->find_matching_campaign( $utm_data );
+	}
+
+	/**
 	 * Trouver la campagne correspondante aux paramètres UTM
 	 *
 	 * Match exact : source + medium + campaign
