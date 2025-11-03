@@ -32,6 +32,7 @@ class UTM_Admin_Page {
 		add_action( 'admin_post_utm_tracker_clear_test_data', array( $this, 'handle_clear_test_data' ) );
 		add_action( 'admin_post_utm_tracker_save_campaign', array( $this, 'handle_save_campaign' ) );
 		add_action( 'admin_post_utm_tracker_delete_campaign', array( $this, 'handle_delete_campaign' ) );
+		add_action( 'admin_post_utm_tracker_duplicate_campaign', array( $this, 'handle_duplicate_campaign' ) );
 	}
 
 	/**
@@ -736,6 +737,12 @@ class UTM_Admin_Page {
 		if ( isset( $_GET['saved'] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p><strong>✅ Campagne enregistrée avec succès.</strong></p></div>';
 		}
+		if ( isset( $_GET['duplicated'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p><strong>✅ Campagne dupliquée.</strong> N\'oubliez pas de vérifier les UTM avant activation.</p></div>';
+		}
+		if ( isset( $_GET['duplicate_error'] ) ) {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>❌ Duplication impossible.</strong> Vérifiez que la combinaison UTM n\'existe pas déjà.</p></div>';
+		}
 
 		// Récupérer toutes les campagnes
 		$campaigns = $matcher->get_all_campaigns();
@@ -755,7 +762,7 @@ class UTM_Admin_Page {
 			<div class="utm-tracker-card" style="margin-top: 20px;">
 				<?php if ( $campaigns ) : ?>
 					<table class="wp-list-table widefat fixed striped">
-						<thead>
+					<thead>
 							<tr>
 								<th style="width: 50px;">ID</th>
 								<th>Nom</th>
@@ -765,7 +772,7 @@ class UTM_Admin_Page {
 								<th>Tags</th>
 								<th>Statut</th>
 								<th>Stats</th>
-								<th style="width: 150px;">Actions</th>
+							<th style="width: 220px;">Actions</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -805,6 +812,15 @@ class UTM_Admin_Page {
 											<span class="dashicons dashicons-edit" style="vertical-align: middle;"></span>
 											Éditer
 										</a>
+									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display: inline;">
+										<?php wp_nonce_field( 'utm_tracker_duplicate_campaign', 'utm_tracker_nonce' ); ?>
+										<input type="hidden" name="action" value="utm_tracker_duplicate_campaign">
+										<input type="hidden" name="campaign_id" value="<?php echo esc_attr( $campaign->id ); ?>">
+										<button type="submit" class="button button-small">
+											<span class="dashicons dashicons-admin-page" style="vertical-align: middle;"></span>
+											Dupliquer
+										</button>
+									</form>
 										<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display: inline;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cette campagne ?');">
 											<?php wp_nonce_field( 'utm_tracker_delete_campaign', 'utm_tracker_nonce' ); ?>
 											<input type="hidden" name="action" value="utm_tracker_delete_campaign">
@@ -1236,6 +1252,67 @@ class UTM_Admin_Page {
 				admin_url( 'admin.php?page=utm-tracker-campaigns' )
 			)
 		);
+		exit;
+	}
+
+	/**
+	 * Dupliquer une campagne existante
+	 *
+	 * @since 1.0.0
+	 */
+	public function handle_duplicate_campaign() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Permissions insuffisantes.', 'utm-tracker' ) );
+		}
+
+		check_admin_referer( 'utm_tracker_duplicate_campaign', 'utm_tracker_nonce' );
+
+		$campaign_id = isset( $_POST['campaign_id'] ) ? intval( $_POST['campaign_id'] ) : 0;
+		if ( $campaign_id <= 0 ) {
+			wp_safe_redirect( add_query_arg( 'duplicate_error', '1', admin_url( 'admin.php?page=utm-tracker-campaigns' ) ) );
+			exit;
+		}
+
+		$campaign = utm_get_campaign( $campaign_id );
+		if ( ! $campaign ) {
+			wp_safe_redirect( add_query_arg( 'duplicate_error', '1', admin_url( 'admin.php?page=utm-tracker-campaigns' ) ) );
+			exit;
+		}
+
+		$matcher = utm_tracker()->matcher;
+		$source  = $campaign->utm_source;
+		$medium  = $campaign->utm_medium;
+		$base_slug = $campaign->utm_campaign;
+
+		$new_slug = $base_slug . '-copy';
+		$counter  = 1;
+		while ( $matcher->campaign_exists( $source, $medium, $new_slug ) ) {
+			$counter++;
+			$new_slug = $base_slug . '-copy-' . $counter;
+		}
+
+		$new_name = $campaign->name . ' (Copie' . ( $counter > 1 ? ' ' . $counter : '' ) . ')';
+		$user_tags = json_decode( $campaign->user_tags, true );
+		if ( ! is_array( $user_tags ) ) {
+			$user_tags = array();
+		}
+
+		$new_campaign_id = utm_add_campaign( array(
+			'name'         => $new_name,
+			'utm_source'   => $source,
+			'utm_medium'   => $medium,
+			'utm_campaign' => $new_slug,
+			'utm_content'  => $campaign->utm_content,
+			'utm_term'     => $campaign->utm_term,
+			'user_tags'    => $user_tags,
+			'status'       => 'paused',
+		) );
+
+		if ( $new_campaign_id ) {
+			wp_safe_redirect( add_query_arg( 'duplicated', '1', admin_url( 'admin.php?page=utm-tracker-campaigns' ) ) );
+		} else {
+			wp_safe_redirect( add_query_arg( 'duplicate_error', '1', admin_url( 'admin.php?page=utm-tracker-campaigns' ) ) );
+		}
 		exit;
 	}
 
