@@ -45,7 +45,7 @@ class UTM_DB_Installer {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY (id),
-			UNIQUE KEY unique_utm (utm_source, utm_medium, utm_campaign),
+			UNIQUE KEY unique_utm (utm_source, utm_medium, utm_campaign, utm_content),
 			KEY idx_status (status)
 		) $charset_collate;";
 

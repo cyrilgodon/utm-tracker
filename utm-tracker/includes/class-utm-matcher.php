@@ -34,7 +34,7 @@ class UTM_Matcher {
 	/**
 	 * Trouver la campagne correspondante aux paramètres UTM
 	 *
-	 * Match exact : source + medium + campaign
+	 * Match exact : source + medium + campaign + content (si présent)
 	 * Retourne null si aucune campagne active ne correspond.
 	 *
 	 * @since 1.0.0
@@ -51,18 +51,39 @@ class UTM_Matcher {
 
 		$table_campaigns = $wpdb->prefix . 'utm_campaigns';
 
-		// Préparer la requête
-		$query = $wpdb->prepare(
-			"SELECT * FROM {$table_campaigns}
-			WHERE utm_source = %s
-			AND utm_medium = %s
-			AND utm_campaign = %s
-			AND status = 'active'
-			LIMIT 1",
-			strtolower( $utm_data['utm_source'] ),
-			strtolower( $utm_data['utm_medium'] ),
-			strtolower( $utm_data['utm_campaign'] )
-		);
+		// Préparer la requête avec content
+		$utm_content = isset( $utm_data['utm_content'] ) ? strtolower( $utm_data['utm_content'] ) : '';
+		
+		if ( ! empty( $utm_content ) ) {
+			// Match exact avec content
+			$query = $wpdb->prepare(
+				"SELECT * FROM {$table_campaigns}
+				WHERE utm_source = %s
+				AND utm_medium = %s
+				AND utm_campaign = %s
+				AND utm_content = %s
+				AND status = 'active'
+				LIMIT 1",
+				strtolower( $utm_data['utm_source'] ),
+				strtolower( $utm_data['utm_medium'] ),
+				strtolower( $utm_data['utm_campaign'] ),
+				$utm_content
+			);
+		} else {
+			// Match sans content (ou content NULL)
+			$query = $wpdb->prepare(
+				"SELECT * FROM {$table_campaigns}
+				WHERE utm_source = %s
+				AND utm_medium = %s
+				AND utm_campaign = %s
+				AND (utm_content IS NULL OR utm_content = '')
+				AND status = 'active'
+				LIMIT 1",
+				strtolower( $utm_data['utm_source'] ),
+				strtolower( $utm_data['utm_medium'] ),
+				strtolower( $utm_data['utm_campaign'] )
+			);
+		}
 
 		// Exécuter la requête
 		$campaign = $wpdb->get_row( $query );
@@ -72,7 +93,11 @@ class UTM_Matcher {
 			if ( $campaign ) {
 				error_log( '[UTM Tracker] Campagne trouvée : ' . $campaign->name . ' (ID: ' . $campaign->id . ')' );
 			} else {
-				error_log( '[UTM Tracker] Aucune campagne trouvée pour : ' . $utm_data['utm_source'] . '/' . $utm_data['utm_medium'] . '/' . $utm_data['utm_campaign'] );
+				$log_key = $utm_data['utm_source'] . '/' . $utm_data['utm_medium'] . '/' . $utm_data['utm_campaign'];
+				if ( ! empty( $utm_content ) ) {
+					$log_key .= '/' . $utm_content;
+				}
+				error_log( '[UTM Tracker] Aucune campagne trouvée pour : ' . $log_key );
 			}
 		}
 
@@ -191,25 +216,46 @@ class UTM_Matcher {
 	 * @param string $source   Source UTM.
 	 * @param string $medium   Medium UTM.
 	 * @param string $campaign Campaign UTM.
+	 * @param string $content  Content UTM (optionnel).
 	 * @return int|false ID de la campagne existante ou false
 	 */
-	public function campaign_exists( $source, $medium, $campaign ) {
+	public function campaign_exists( $source, $medium, $campaign, $content = '' ) {
 		global $wpdb;
 
 		$table_campaigns = $wpdb->prefix . 'utm_campaigns';
 
-		$result = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT id FROM {$table_campaigns}
-				WHERE utm_source = %s
-				AND utm_medium = %s
-				AND utm_campaign = %s
-				LIMIT 1",
-				strtolower( $source ),
-				strtolower( $medium ),
-				strtolower( $campaign )
-			)
-		);
+		if ( ! empty( $content ) ) {
+			// Vérifier avec content
+			$result = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT id FROM {$table_campaigns}
+					WHERE utm_source = %s
+					AND utm_medium = %s
+					AND utm_campaign = %s
+					AND utm_content = %s
+					LIMIT 1",
+					strtolower( $source ),
+					strtolower( $medium ),
+					strtolower( $campaign ),
+					strtolower( $content )
+				)
+			);
+		} else {
+			// Vérifier sans content
+			$result = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT id FROM {$table_campaigns}
+					WHERE utm_source = %s
+					AND utm_medium = %s
+					AND utm_campaign = %s
+					AND (utm_content IS NULL OR utm_content = '')
+					LIMIT 1",
+					strtolower( $source ),
+					strtolower( $medium ),
+					strtolower( $campaign )
+				)
+			);
+		}
 
 		return $result ? (int) $result : false;
 	}

@@ -1312,10 +1312,11 @@ class UTM_Admin_Page {
 		$source  = $campaign->utm_source;
 		$medium  = $campaign->utm_medium;
 		$base_slug = $campaign->utm_campaign;
+		$content = $campaign->utm_content;
 
 		$new_slug = $base_slug . '-copy';
 		$counter  = 1;
-		while ( $matcher->campaign_exists( $source, $medium, $new_slug ) ) {
+		while ( $matcher->campaign_exists( $source, $medium, $new_slug, $content ) ) {
 			$counter++;
 			$new_slug = $base_slug . '-copy-' . $counter;
 		}
