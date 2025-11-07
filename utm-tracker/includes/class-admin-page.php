@@ -1198,29 +1198,58 @@ class UTM_Admin_Page {
 			'status'       => $status,
 		);
 
-		// Créer ou mettre à jour
-		if ( $campaign_id > 0 ) {
-			// Mise à jour
-			$result = utm_update_campaign( $campaign_id, $campaign_data );
-		} else {
-			// Création
-			$result = utm_add_campaign( $campaign_data );
-		}
+	// Créer ou mettre à jour
+	if ( $campaign_id > 0 ) {
+		// Mise à jour
+		$result = utm_update_campaign( $campaign_id, $campaign_data );
+	} else {
+		// Création
+		$result = utm_add_campaign( $campaign_data );
+	}
 
-		// Redirection
-		if ( $result ) {
-			wp_safe_redirect(
-				add_query_arg(
-					'saved',
-					'1',
-					admin_url( 'admin.php?page=utm-tracker-campaigns' )
-				)
+	// Redirection avec gestion d'erreur détaillée
+	if ( $result ) {
+		wp_safe_redirect(
+			add_query_arg(
+				'saved',
+				'1',
+				admin_url( 'admin.php?page=utm-tracker-campaigns' )
+			)
+		);
+	} else {
+		// Vérifier si c'est une erreur de duplicate
+		global $wpdb;
+		$last_error = $wpdb->last_error;
+		
+		if ( strpos( $last_error, 'Duplicate entry' ) !== false && strpos( $last_error, 'unique_utm' ) !== false ) {
+			// Extraire la combinaison UTM de l'erreur
+			preg_match( "/'([^']+)' for key 'wp_utm_campaigns\.unique_utm'/", $last_error, $matches );
+			$duplicate_key = isset( $matches[1] ) ? $matches[1] : 'inconnue';
+			
+			wp_die(
+				sprintf(
+					'<h1>❌ Erreur : Campagne existante</h1><p>Une campagne avec la combinaison <strong>%s</strong> existe déjà.</p><p>Chaque combinaison source/medium/campaign doit être unique.</p><p><a href="%s" class="button button-primary">← Retour</a></p>',
+					esc_html( $duplicate_key ),
+					esc_url( admin_url( 'admin.php?page=utm-tracker-campaigns' ) )
+				),
+				'Campagne existante',
+				array( 'back_link' => true )
 			);
 		} else {
-			wp_die( 'Erreur lors de la sauvegarde de la campagne' );
+			// Erreur générique avec détails
+			wp_die(
+				sprintf(
+					'<h1>❌ Erreur lors de la sauvegarde</h1><p>Erreur technique : <code>%s</code></p><p><a href="%s" class="button button-primary">← Retour</a></p>',
+					esc_html( $last_error ?: 'Inconnue' ),
+					esc_url( admin_url( 'admin.php?page=utm-tracker-campaigns' ) )
+				),
+				'Erreur de sauvegarde',
+				array( 'back_link' => true )
+			);
 		}
+	}
 
-		exit;
+	exit;
 	}
 
 	/**
