@@ -31,15 +31,18 @@ define( 'UTM_TRACKER_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'UTM_TRACKER_INCLUDES_DIR', UTM_TRACKER_PLUGIN_DIR . 'includes/' );
 
 // 🚀 Plugin Update Checker - GitHub Integration
-require_once UTM_TRACKER_PLUGIN_DIR . 'vendor/autoload.php';
-use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
-
-$utmUpdateChecker = PucFactory::buildUpdateChecker(
-	'https://github.com/cyrilgodon/utm-tracker',
-	__FILE__,
-	'utm-tracker'
-);
-$utmUpdateChecker->setBranch('main');
+if ( file_exists( UTM_TRACKER_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
+	require_once UTM_TRACKER_PLUGIN_DIR . 'vendor/autoload.php';
+	
+	if ( class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
+		$utmUpdateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+			'https://github.com/cyrilgodon/utm-tracker',
+			__FILE__,
+			'utm-tracker'
+		);
+		$utmUpdateChecker->setBranch('main');
+	}
+}
 
 /**
  * Classe principale du plugin UTM Tracker
