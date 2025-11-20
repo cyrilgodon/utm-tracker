@@ -2,8 +2,8 @@
 /**
  * Plugin Name: UTM Tracker
  * Plugin URI: https://elevatio.fr
- * Description: Suivi des paramètres UTM et attribution automatique de tags utilisateur basée sur les campagnes marketing. Pas de cookies, tracking via session PHP.
- * Version: 1.0.0
+ * Description: Suivi des paramètres UTM et attribution automatique de tags utilisateur basée sur les campagnes marketing. Tracking via cookies sécurisés.
+ * Version: 1.1.0
  * Author: Elevatio
  * Author URI: https://elevatio.fr
  * License: GPL v2 or later
@@ -24,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Constantes du plugin
  */
-define( 'UTM_TRACKER_VERSION', '1.0.0' );
+define( 'UTM_TRACKER_VERSION', '1.1.0' );
 define( 'UTM_TRACKER_PLUGIN_FILE', __FILE__ );
 define( 'UTM_TRACKER_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'UTM_TRACKER_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -149,11 +149,6 @@ class UTM_Tracker {
 		// Activation/Désactivation du plugin
 		register_activation_hook( UTM_TRACKER_PLUGIN_FILE, array( $this, 'activate' ) );
 		register_deactivation_hook( UTM_TRACKER_PLUGIN_FILE, array( $this, 'deactivate' ) );
-
-		// Hooks WordPress
-		add_action( 'plugins_loaded', array( $this, 'start_session' ), 1 );
-		add_action( 'wp_logout', array( $this, 'destroy_session' ) );
-		add_action( 'wp_login', array( $this, 'destroy_session' ) );
 		
 		// Hook pour l'inscription utilisateur
 		add_action( 'user_register', array( $this, 'on_user_register' ), 10, 1 );
@@ -193,30 +188,8 @@ class UTM_Tracker {
 	}
 
 	/**
-	 * Démarrer la session PHP si pas déjà démarrée
-	 *
-	 * @since 1.0.0
-	 */
-	public function start_session() {
-		if ( ! session_id() && ! headers_sent() ) {
-			session_start();
-		}
-	}
-
-	/**
-	 * Détruire la session PHP
-	 *
-	 * @since 1.0.0
-	 */
-	public function destroy_session() {
-		if ( session_id() ) {
-			session_destroy();
-		}
-	}
-
-	/**
 	 * Hook appelé lors de l'inscription d'un nouvel utilisateur
-	 * Applique les tags basés sur les UTM capturés en session
+	 * Applique les tags basés sur les UTM capturés en cookies
 	 *
 	 * @since 1.0.0
 	 * @param int $user_id ID du nouvel utilisateur
@@ -224,7 +197,7 @@ class UTM_Tracker {
 	public function on_user_register( $user_id ) {
 		// Envelopper dans un try-catch pour éviter de casser l'inscription
 		try {
-			// Vérifier que les objets sont initialisés (noms corrects des propriétés)
+			// Vérifier que les objets sont initialisés
 			if ( ! isset( $this->capture ) || ! isset( $this->matcher ) || ! isset( $this->tag_applicator ) ) {
 				if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 					error_log( '[UTM Tracker] ⚠️ Objets non initialisés lors de user_register' );
@@ -232,17 +205,12 @@ class UTM_Tracker {
 				return;
 			}
 
-			// Vérifier que la session existe
-			if ( ! session_id() ) {
+			// Récupérer les données UTM des cookies
+			if ( ! is_callable( array( $this->capture, 'get_utm_data' ) ) ) {
 				return;
 			}
 
-			// Récupérer les données UTM de la session
-			if ( ! is_callable( array( $this->capture, 'get_session_utm_data' ) ) ) {
-				return;
-			}
-
-			$utm_data = $this->capture->get_session_utm_data();
+			$utm_data = $this->capture->get_utm_data();
 			
 			if ( empty( $utm_data ) ) {
 				// Aucune donnée UTM en session - c'est normal, on sort silencieusement

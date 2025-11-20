@@ -7,6 +7,47 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
+## [1.1.0] - 2025-11-20
+
+### 🚀 BREAKING CHANGE : Migration Sessions → Cookies
+
+**⚠️ ATTENTION** : Cette version change le système de stockage UTM. Aucune migration automatique des données en session.
+
+### 🔧 Modifié
+
+#### Système de Stockage
+- **SUPPRIMÉ** : Gestion des sessions PHP (`session_start()`, `session_destroy()`)
+- **AJOUTÉ** : Cookies sécurisés avec `httpOnly` et `secure` (HTTPS)
+- **Cookie lifetime** : 30 jours (2 592 000 secondes)
+- **Préfixe cookies** : `utm_*` (ex: `utm_utm_source`, `utm_session_id`)
+- **Session ID** : Généré automatiquement avec `wp_generate_password(32, false)`
+
+#### Avantages
+- ✅ **Pas de lock de fichiers** : plus de problèmes de concurrence session
+- ✅ **Compatibilité cache** : fonctionne avec Varnish, Redis, CDN
+- ✅ **Performance** : pas de `session_start()` sur chaque requête
+- ✅ **Scalabilité** : pas de fichiers session sur le serveur
+
+#### Code Modifié
+- `class-utm-capture.php` :
+  - `capture_utm_params()` : utilise `store_utm_cookies()` au lieu de `$_SESSION`
+  - `get_utm_data()` : remplace `get_session_utm_data()`
+  - Nouvelles méthodes : `generate_session_id()`, `store_utm_cookies()`, `get_cookie()`, `get_utm_cookies()`, `clear_utm_cookies()`
+- `utm-tracker.php` :
+  - Suppression de `start_session()` et `destroy_session()`
+  - Suppression des hooks `plugins_loaded`, `wp_logout`, `wp_login`
+  - `on_user_register()` : utilise `get_utm_data()` au lieu de `get_session_utm_data()`
+
+### 🐛 Corrigé
+- Sessions PHP non fermées causant des locks
+- Incompatibilité avec les systèmes de cache
+- Problèmes de performance sur sites à fort trafic
+
+### 📋 Migration Manuelle Requise
+Si vous aviez des UTMs en session active avant upgrade, ils seront perdus. Les nouveaux visiteurs utiliseront automatiquement le système de cookies.
+
+---
+
 ## [1.0.0] - 2025-10-30
 
 ### 🎉 Version Initiale - MVP

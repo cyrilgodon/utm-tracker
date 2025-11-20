@@ -2,7 +2,7 @@
 /**
  * Capture des paramètres UTM depuis l'URL
  *
- * Capture les paramètres UTM et les stocke en session PHP (pas de cookies).
+ * Capture les paramètres UTM et les stocke en cookies sécurisés.
  *
  * @package UTM_Tracker
  * @since   1.0.0
@@ -36,13 +36,26 @@ class UTM_Capture {
 	);
 
 	/**
+	 * Durée de vie du cookie (30 jours)
+	 *
+	 * @var int
+	 */
+	private $cookie_lifetime = 2592000; // 30 jours en secondes
+
+	/**
+	 * Préfixe des cookies
+	 *
+	 * @var string
+	 */
+	private $cookie_prefix = 'utm_';
+
+	/**
 	 * Constructeur
 	 *
 	 * @since 1.0.0
 	 */
 	public function __construct() {
-		add_action( 'template_redirect', array( $this, 'capture_utm_params' ), 1 );
-		add_action( 'user_register', array( $this, 'process_user_registration' ), 10, 1 );
+		add_action( 'init', array( $this, 'capture_utm_params' ), 1 );
 	}
 
 	/**
@@ -51,11 +64,6 @@ class UTM_Capture {
 	 * @since 1.0.0
 	 */
 	public function capture_utm_params() {
-		// Vérifier si la session est démarrée
-		if ( ! session_id() ) {
-			return;
-		}
-
 		// Vérifier s'il y a des paramètres UTM dans l'URL
 		$has_utm = false;
 		foreach ( $this->utm_params as $param ) {
@@ -88,14 +96,20 @@ class UTM_Capture {
 			}
 		}
 
+		// Générer un ID de session unique (si pas déjà existant)
+		$session_id = $this->get_cookie( 'session_id' );
+		if ( ! $session_id ) {
+			$session_id = $this->generate_session_id();
+		}
+
 		// Ajouter des métadonnées
 		$utm_data['referrer']      = isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '';
 		$utm_data['landing_page']  = esc_url_raw( $this->get_current_url() );
 		$utm_data['timestamp']     = current_time( 'mysql' );
-		$utm_data['session_id']    = session_id();
+		$utm_data['session_id']    = $session_id;
 
-		// Stocker en session
-		$_SESSION['utm_data'] = $utm_data;
+		// Stocker en cookies
+		$this->store_utm_cookies( $utm_data );
 
 		// Enregistrer l'événement dans la base de données
 		$this->log_utm_event( $utm_data );
@@ -187,58 +201,105 @@ class UTM_Capture {
 	}
 
 	/**
-	 * Traiter l'inscription d'un utilisateur
+	 * Générer un ID de session unique
 	 *
 	 * @since 1.0.0
-	 * @param int $user_id ID de l'utilisateur nouvellement inscrit.
+	 * @return string
 	 */
-	public function process_user_registration( $user_id ) {
-		// Vérifier si la session est démarrée
-		if ( ! session_id() ) {
-			return;
+	private function generate_session_id() {
+		return wp_generate_password( 32, false );
+	}
+
+	/**
+	 * Stocker les données UTM en cookies
+	 *
+	 * @since 1.0.0
+	 * @param array $utm_data Données à stocker.
+	 */
+	private function store_utm_cookies( $utm_data ) {
+		$expires = time() + $this->cookie_lifetime;
+		$secure  = is_ssl();
+		$path    = COOKIEPATH ? COOKIEPATH : '/';
+		$domain  = COOKIE_DOMAIN;
+
+		foreach ( $utm_data as $key => $value ) {
+			$cookie_name = $this->cookie_prefix . $key;
+			setcookie( $cookie_name, $value, $expires, $path, $domain, $secure, true );
 		}
+	}
 
-		// Récupérer les données UTM de la session
-		$utm_data = isset( $_SESSION['utm_data'] ) ? $_SESSION['utm_data'] : null;
+	/**
+	 * Récupérer une valeur de cookie
+	 *
+	 * @since 1.0.0
+	 * @param string $key Clé du cookie (sans préfixe).
+	 * @return string|null
+	 */
+	private function get_cookie( $key ) {
+		$cookie_name = $this->cookie_prefix . $key;
+		return isset( $_COOKIE[ $cookie_name ] ) ? sanitize_text_field( wp_unslash( $_COOKIE[ $cookie_name ] ) ) : null;
+	}
 
-		if ( empty( $utm_data ) ) {
-			return;
-		}
+	/**
+	 * Récupérer toutes les données UTM des cookies
+	 *
+	 * @since 1.0.0
+	 * @return array|null
+	 */
+	private function get_utm_cookies() {
+		$utm_data = array();
 
-		// Enregistrer les données UTM en user_meta
-		update_user_meta( $user_id, 'utm_source', $utm_data['utm_source'] ?? '' );
-		update_user_meta( $user_id, 'utm_medium', $utm_data['utm_medium'] ?? '' );
-		update_user_meta( $user_id, 'utm_campaign', $utm_data['utm_campaign'] ?? '' );
-		update_user_meta( $user_id, 'utm_content', $utm_data['utm_content'] ?? '' );
-		update_user_meta( $user_id, 'utm_term', $utm_data['utm_term'] ?? '' );
-		update_user_meta( $user_id, 'utm_referrer', $utm_data['referrer'] ?? '' );
-		update_user_meta( $user_id, 'utm_landing_page', $utm_data['landing_page'] ?? '' );
-		update_user_meta( $user_id, 'utm_timestamp', $utm_data['timestamp'] ?? '' );
-
-		// Matcher la campagne et appliquer les tags
-		$matcher = utm_tracker()->matcher;
-		if ( $matcher ) {
-			$campaign = $matcher->find_matching_campaign( $utm_data );
-
-			if ( $campaign ) {
-				// Enregistrer l'ID de la campagne
-				update_user_meta( $user_id, 'utm_campaign_id', $campaign->id );
-
-				// Appliquer les tags
-				$tag_applicator = utm_tracker()->tag_applicator;
-				if ( $tag_applicator ) {
-					$tag_applicator->apply_tags_to_user( $user_id, $campaign );
-				}
-
-				// Log pour debug
-				if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-					error_log( '[UTM Tracker] Campagne matchée : ' . $campaign->name . ' (ID: ' . $campaign->id . ') pour user ID: ' . $user_id );
-				}
+		foreach ( $this->utm_params as $param ) {
+			$value = $this->get_cookie( $param );
+			if ( $value ) {
+				$utm_data[ $param ] = $value;
 			}
 		}
 
-		// Nettoyer la session
-		unset( $_SESSION['utm_data'] );
+		// Ajouter les métadonnées
+		$referrer = $this->get_cookie( 'referrer' );
+		if ( $referrer ) {
+			$utm_data['referrer'] = $referrer;
+		}
+
+		$landing_page = $this->get_cookie( 'landing_page' );
+		if ( $landing_page ) {
+			$utm_data['landing_page'] = $landing_page;
+		}
+
+		$timestamp = $this->get_cookie( 'timestamp' );
+		if ( $timestamp ) {
+			$utm_data['timestamp'] = $timestamp;
+		}
+
+		$session_id = $this->get_cookie( 'session_id' );
+		if ( $session_id ) {
+			$utm_data['session_id'] = $session_id;
+		}
+
+		return ! empty( $utm_data ) ? $utm_data : null;
+	}
+
+	/**
+	 * Supprimer tous les cookies UTM
+	 *
+	 * @since 1.0.0
+	 */
+	private function clear_utm_cookies() {
+		$expires = time() - 3600;
+		$path    = COOKIEPATH ? COOKIEPATH : '/';
+		$domain  = COOKIE_DOMAIN;
+		$secure  = is_ssl();
+
+		$all_keys = array_merge(
+			$this->utm_params,
+			array( 'referrer', 'landing_page', 'timestamp', 'session_id' )
+		);
+
+		foreach ( $all_keys as $key ) {
+			$cookie_name = $this->cookie_prefix . $key;
+			setcookie( $cookie_name, '', $expires, $path, $domain, $secure, true );
+		}
 	}
 
 	/**
@@ -256,17 +317,13 @@ class UTM_Capture {
 	}
 
 	/**
-	 * Obtenir les données UTM de la session courante
+	 * Obtenir les données UTM stockées (publique pour utm-tracker.php)
 	 *
 	 * @since 1.0.0
-	 * @return array|null Données UTM ou null si pas de session
+	 * @return array|null Données UTM ou null
 	 */
-	public function get_session_utm_data() {
-		if ( ! session_id() ) {
-			return null;
-		}
-
-		return isset( $_SESSION['utm_data'] ) ? $_SESSION['utm_data'] : null;
+	public function get_utm_data() {
+		return $this->get_utm_cookies();
 	}
 
 	/**

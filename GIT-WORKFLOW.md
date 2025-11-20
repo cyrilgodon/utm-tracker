@@ -29,3 +29,7 @@ Utilise le projet GitHub pour :
 - **README.md** : Documentation principale du plugin
 - **STRUCTURE.md** : Architecture technique
 
+
+
+
+
